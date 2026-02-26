@@ -1,0 +1,120 @@
+// prisma/schema.prisma — Database Schema
+// ========================================
+// This is Prisma's way of defining your database tables.
+// Each "model" becomes a table. The fields become columns.
+// After editing this file, run: npx prisma db push
+// That syncs this schema → your actual database.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Users ─────────────────────────────────────────────────
+// Two roles: "customer" (books rooms) and "owner" (manages hotels)
+model User {
+  id        String   @id
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("customer") // "customer" or "owner"
+  phone     String? // ? means optional (nullable)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations — a user can own hotels, make bookings, write reviews
+  hotels   Hotel[]
+  bookings Booking[]
+  reviews  Review[]
+
+  @@map("users") // table name in PostgreSQL
+}
+
+// ─── Hotels ────────────────────────────────────────────────
+// Each hotel belongs to one owner and can have many rooms
+model Hotel {
+  id           String   @id
+  ownerId      String   @map("owner_id")
+  name         String
+  description  String?
+  city         String
+  country      String
+  amenities    Json     @default("[]") // stored as JSON array
+  rating       Decimal  @default(0.0) @db.Decimal(2, 1)
+  totalReviews Int      @default(0) @map("total_reviews")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  owner    User      @relation(fields: [ownerId], references: [id])
+  rooms    Room[]
+  bookings Booking[]
+  reviews  Review[]
+
+  @@map("hotels")
+}
+
+// ─── Rooms ─────────────────────────────────────────────────
+// Each room belongs to a hotel. Room numbers are unique per hotel.
+model Room {
+  id            String   @id
+  hotelId       String   @map("hotel_id")
+  roomNumber    String   @map("room_number")
+  roomType      String   @map("room_type")
+  pricePerNight Decimal  @map("price_per_night") @db.Decimal(10, 2)
+  maxOccupancy  Int      @map("max_occupancy")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  hotel    Hotel     @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  bookings Booking[]
+
+  @@unique([hotelId, roomNumber]) // can't have two "Room 101" in same hotel
+  @@map("rooms")
+}
+
+// ─── Bookings ──────────────────────────────────────────────
+// A customer books a specific room for specific dates
+model Booking {
+  id           String    @id
+  userId       String    @map("user_id")
+  roomId       String    @map("room_id")
+  hotelId      String    @map("hotel_id")
+  checkInDate  DateTime  @map("check_in_date") @db.Date
+  checkOutDate DateTime  @map("check_out_date") @db.Date
+  guests       Int
+  totalPrice   Decimal   @map("total_price") @db.Decimal(10, 2)
+  status       String    @default("confirmed") // "confirmed" or "cancelled"
+  bookingDate  DateTime  @default(now()) @map("booking_date")
+  cancelledAt  DateTime? @map("cancelled_at")
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id])
+  room    Room     @relation(fields: [roomId], references: [id])
+  hotel   Hotel    @relation(fields: [hotelId], references: [id])
+  reviews Review[]
+
+  @@map("bookings")
+}
+
+// ─── Reviews ───────────────────────────────────────────────
+// A customer can review a hotel after their booking checkout date passes
+model Review {
+  id        String   @id
+  userId    String   @map("user_id")
+  hotelId   String   @map("hotel_id")
+  bookingId String   @map("booking_id")
+  rating    Int // 1 to 5
+  comment   String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id])
+  hotel   Hotel   @relation(fields: [hotelId], references: [id])
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@unique([userId, bookingId]) // one review per booking
+  @@map("reviews")
+}
